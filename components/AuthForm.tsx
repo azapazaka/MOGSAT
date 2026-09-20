@@ -1,14 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
+import { useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { signIn, signUp } from "@/app/auth/actions";
 
 /**
- * Validation UI only — Stage 1 has no authentication. Submitting runs the
- * client-side checks and then shows what would happen next; Stage 2 replaces
- * `handleSubmit` with a Supabase auth call and keeps the same markup.
+ * Sign-in and sign-up, backed by Supabase Auth.
+ *
+ * Client-side validation runs first so obvious mistakes never cost a round
+ * trip, then the server action does the real work. The server is still the
+ * authority — the checks here are a convenience, not a security boundary.
  */
 
 interface Errors {
@@ -22,13 +25,18 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const isSignup = mode === "signup";
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next") ?? "/dashboard";
+
   const [values, setValues] = useState({ name: "", email: "", password: "", confirm: "" });
   const [errors, setErrors] = useState<Errors>({});
-  const [submitted, setSubmitted] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
 
   const update = (field: keyof typeof values) => (event: React.ChangeEvent<HTMLInputElement>) => {
     setValues((current) => ({ ...current, [field]: event.target.value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
+    setFormError(null);
   };
 
   const validate = (): Errors => {
@@ -42,9 +50,21 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    const next = validate();
-    setErrors(next);
-    setSubmitted(Object.keys(next).length === 0);
+    const found = validate();
+    setErrors(found);
+    if (Object.keys(found).length > 0) return;
+
+    const formData = new FormData();
+    formData.set("email", values.email);
+    formData.set("password", values.password);
+    if (isSignup) formData.set("name", values.name);
+    else formData.set("next", next);
+
+    startTransition(async () => {
+      // A successful action redirects, so control only returns here on failure.
+      const result = isSignup ? await signUp(formData) : await signIn(formData);
+      if (result?.error) setFormError(result.error);
+    });
   };
 
   return (
@@ -54,9 +74,11 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
           <Label htmlFor="name">Full name</Label>
           <Input
             id="name"
+            name="name"
             value={values.name}
             onChange={update("name")}
             autoComplete="name"
+            disabled={pending}
             aria-invalid={Boolean(errors.name)}
             aria-describedby={errors.name ? "name-error" : undefined}
           />
@@ -70,10 +92,12 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         <Label htmlFor="email">Email</Label>
         <Input
           id="email"
+          name="email"
           type="email"
           value={values.email}
           onChange={update("email")}
           autoComplete="email"
+          disabled={pending}
           aria-invalid={Boolean(errors.email)}
           aria-describedby={errors.email ? "email-error" : undefined}
         />
@@ -86,10 +110,12 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         <Label htmlFor="password">Password</Label>
         <Input
           id="password"
+          name="password"
           type="password"
           value={values.password}
           onChange={update("password")}
           autoComplete={isSignup ? "new-password" : "current-password"}
+          disabled={pending}
           aria-invalid={Boolean(errors.password)}
           aria-describedby={errors.password ? "password-error" : undefined}
         />
@@ -103,10 +129,12 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
           <Label htmlFor="confirm">Confirm password</Label>
           <Input
             id="confirm"
+            name="confirm"
             type="password"
             value={values.confirm}
             onChange={update("confirm")}
             autoComplete="new-password"
+            disabled={pending}
             aria-invalid={Boolean(errors.confirm)}
             aria-describedby={errors.confirm ? "confirm-error" : undefined}
           />
@@ -116,17 +144,22 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         </div>
       ) : null}
 
-      <Button type="submit" variant="primary" size="lg" className="w-full">
-        {isSignup ? "Create account" : "Log in"}
+      <Button type="submit" variant="primary" size="lg" className="w-full" disabled={pending}>
+        {pending
+          ? isSignup
+            ? "Creating account…"
+            : "Logging in…"
+          : isSignup
+            ? "Create account"
+            : "Log in"}
       </Button>
 
-      {submitted ? (
-        <p role="status" className="rounded-input border border-line bg-paper p-3 text-meta text-ink-muted">
-          Validation passed. Authentication arrives in Stage 2 — in the meantime, open the{" "}
-          <Link href="/dashboard" className="text-accent underline underline-offset-2">
-            demo dashboard
-          </Link>
-          .
+      {formError ? (
+        <p
+          role="alert"
+          className="rounded-input border border-incorrect bg-paper p-3 text-meta text-incorrect"
+        >
+          {formError}
         </p>
       ) : null}
     </form>

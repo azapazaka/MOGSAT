@@ -34,6 +34,30 @@ export type Domain = MathDomain | RwDomain;
 
 export type ChoiceLabel = "A" | "B" | "C" | "D";
 
+/**
+ * A wrong answer is never arbitrary — each one is built from a specific
+ * mistake. Naming that mistake is what lets the platform teach strategy
+ * instead of just handing over the key. Codes match `public.trap_types`.
+ */
+export type TrapType =
+  | "too_broad"
+  | "too_narrow"
+  | "unsupported"
+  | "opposite"
+  | "partially_correct"
+  | "misread_question"
+  | "true_but_irrelevant"
+  | "calculation_error"
+  | "sign_error"
+  | "wrong_formula"
+  | "wrong_variable"
+  | "scope_error"
+  | "extreme_language"
+  | "outside_passage"
+  | "grammar_violation"
+  | "common_misconception"
+  | "incomplete_step";
+
 export interface Choice {
   id: string;
   label: ChoiceLabel;
@@ -41,6 +65,14 @@ export interface Choice {
   /** Rendered on its own line in the serif face when the choice is an
    *  expression rather than prose. */
   expression?: string;
+  /**
+   * Why this specific choice is right or wrong. Present on every choice, not
+   * just the key — this is what the incorrect-answer breakdown is built from.
+   * Optional because an imported question may not carry one yet.
+   */
+  explanation?: string;
+  /** The mistake this distractor is designed to catch. Absent on the key. */
+  trapType?: TrapType;
 }
 
 export interface QuestionTable {
@@ -83,8 +115,38 @@ export interface Question {
   correctAnswer: string;
   /** Alternate accepted entries for student-produced responses (e.g. "0.5", "1/2"). */
   acceptedAnswers?: string[];
+  /** Why the correct answer is correct. Per-choice reasoning lives on `choices`. */
   explanation: string;
   estimatedTimeSeconds: number;
+
+  /* ---------------------------------------------------------------------- */
+  /* Teaching payload — what turns a solved question into a learned one.     */
+  /* All optional so a partially specified import is still usable.           */
+  /* ---------------------------------------------------------------------- */
+
+  /** The single mistake most students make here. */
+  commonTrap?: string;
+  /** A reusable approach, not a restatement of this question's solution. */
+  strategy?: string;
+  /** One short, memorable takeaway. Shown prominently after a miss. */
+  oneRule?: string;
+  /** What makes this question hard, rather than merely long. */
+  difficultyReason?: string;
+
+  /** Math-specific metadata. */
+  calculatorAllowed?: boolean;
+  formulaRelevant?: string;
+  graphRequired?: boolean;
+  desmosStrategy?: string;
+
+  /** Reading and Writing specific metadata. */
+  rhetoricalContext?: string;
+  grammarRule?: string;
+  evidenceRelationship?: string;
+
+  /** Provenance and free-form labels for filtering. */
+  source?: string;
+  tags?: string[];
 }
 
 export type QuestionStatus = "unattempted" | "correct" | "incorrect" | "flagged";
